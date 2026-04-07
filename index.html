@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debt Ledger · Jarless Tracker</title>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, 'Segoe UI', monospace; }
+        body { background: #f1f5f9; margin: 0; padding: 2rem; display: flex; justify-content: center; }
+        .card { max-width: 900px; width: 100%; background: white; border-radius: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.1); padding: 1.8rem; }
+        h1 { margin-top: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 1.7rem; }
+        .balance { background: #0f172a; color: white; padding: 1rem 1.5rem; border-radius: 1rem; margin: 1rem 0; font-size: 1.8rem; font-weight: bold; display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; }
+        .balance span:first-child { font-size: 1rem; font-weight: normal; opacity: 0.8; }
+        .setup-note { background: #fef9c3; border-left: 5px solid #eab308; padding: 0.5rem 1rem; border-radius: 12px; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        .token-panel { background: #eef2ff; padding: 1rem; border-radius: 1rem; margin-bottom: 1.5rem; display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end; }
+        .token-panel label { font-size: 0.75rem; font-weight: bold; display: block; margin-bottom: 0.2rem; }
+        .token-panel input { padding: 0.5rem; border-radius: 8px; border: 1px solid #cbd5e1; min-width: 280px; font-family: monospace; }
+        button { background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.1s; }
+        button:hover { background: #2563eb; }
+        .form-row { display: flex; gap: 1rem; margin: 1.5rem 0; flex-wrap: wrap; align-items: flex-end; }
+        .form-group { flex: 1; min-width: 150px; }
+        .form-group label { display: block; font-size: 0.75rem; font-weight: bold; margin-bottom: 0.2rem; }
+        .form-group input { width: 100%; padding: 0.6rem; border: 1px solid #cbd5e1; border-radius: 10px; }
+        hr { margin: 1.5rem 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { text-align: left; padding: 0.6rem 0.2rem; border-bottom: 1px solid #e2e8f0; }
+        th { font-weight: 600; color: #334155; }
+        .amount-positive { color: #b91c1c; font-weight: 500; }
+        .amount-negative { color: #15803d; font-weight: 500; }
+        .memo { font-family: monospace; max-width: 250px; word-break: break-word; }
+        .status { font-size: 0.85rem; margin: 0.5rem 0; padding: 0.5rem; border-radius: 8px; background: #f1f5f9; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>📒 Jar‑less Ledger</h1>
+    <div class="setup-note">
+        ⚙️ <strong>One‑time setup</strong> – You and your boss each need a <strong>GitHub personal access token</strong> with <code>repo</code> scope.<br>
+        Store it below – it stays in YOUR browser only. Then set the repo owner, repo name, and ledger file path.
+    </div>
+
+    <div class="token-panel">
+        <div style="flex:2">
+            <label>🔐 GitHub Token (classic, with 'repo' scope)</label>
+            <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxx" style="width:100%">
+        </div>
+        <div>
+            <label>📁 Owner/Repo</label>
+            <input type="text" id="repoInput" placeholder="yourname/debt-tracker" value="">
+        </div>
+        <div>
+            <label>📄 Ledger file</label>
+            <input type="text" id="filepathInput" placeholder="ledger.txt" value="ledger.txt">
+        </div>
+        <div><button id="saveConfigBtn">💾 Save config</button></div>
+    </div>
+
+    <div class="balance" id="balanceDisplay">
+        <span>Current debt (positive = you owe)</span>
+        <span id="balanceAmount">—</span>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>💰 Payment / debt change ($)</label>
+            <input type="number" id="amountInput" placeholder="e.g., -50 (payment), +20 (new debt)" step="0.01">
+        </div>
+        <div class="form-group">
+            <label>📝 Memo (e.g., "paycheck 04/06")</label>
+            <input type="text" id="memoInput" placeholder="short description">
+        </div>
+        <button id="addTransactionBtn">➕ Add entry</button>
+    </div>
+
+    <hr>
+    <h3>📜 Transaction history</h3>
+    <div id="historyTableContainer">
+        <table id="historyTable">
+            <thead><tr><th>Date</th><th>Amount</th><th>Memo</th></tr></thead>
+            <tbody id="historyBody"><tr><td colspan="3">Loading…</td></tr></tbody>
+        </table>
+    </div>
+    <div class="status" id="statusMsg"></div>
+</div>
+
+<script>
+    // ---------- CONFIG ----------
+    const STORAGE_KEYS = {
+        TOKEN: 'debt_github_token',
+        REPO: 'debt_github_repo',
+        FILEPATH: 'debt_ledger_file'
+    };
+
+    // DOM elements
+    const tokenInput = document.getElementById('tokenInput');
+    const repoInput = document.getElementById('repoInput');
+    const filepathInput = document.getElementById('filepathInput');
+    const saveConfigBtn = document.getElementById('saveConfigBtn');
+    const amountInput = document.getElementById('amountInput');
+    const memoInput = document.getElementById('memoInput');
+    const addBtn = document.getElementById('addTransactionBtn');
+    const balanceSpan = document.getElementById('balanceAmount');
+    const historyBody = document.getElementById('historyBody');
+    const statusDiv = document.getElementById('statusMsg');
+
+    let currentToken = '', currentRepo = '', currentFilePath = '';
+
+    function loadConfig() {
+        currentToken = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
+        currentRepo = localStorage.getItem(STORAGE_KEYS.REPO) || '';
+        currentFilePath = localStorage.getItem(STORAGE_KEYS.FILEPATH) || 'ledger.txt';
+        tokenInput.value = currentToken;
+        repoInput.value = currentRepo;
+        filepathInput.value = currentFilePath;
+    }
+
+    function saveConfig() {
+        currentToken = tokenInput.value.trim();
+        currentRepo = repoInput.value.trim();
+        currentFilePath = filepathInput.value.trim() || 'ledger.txt';
+        localStorage.setItem(STORAGE_KEYS.TOKEN, currentToken);
+        localStorage.setItem(STORAGE_KEYS.REPO, currentRepo);
+        localStorage.setItem(STORAGE_KEYS.FILEPATH, currentFilePath);
+        statusDiv.innerText = '✅ Configuration saved. Refresh ledger? Click "Load ledger" or add entry.';
+        loadLedger();  // attempt to fetch with new creds
+    }
+
+    saveConfigBtn.addEventListener('click', saveConfig);
+
+    // ---------- GITHUB API HELPERS ----------
+    async function githubRequest(method, url, body = null, token) {
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/vnd.github.v3+json'
+        };
+        if (body) {
+            headers['Content-Type'] = 'application/json';
+        }
+        const response = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`GitHub API ${response.status}: ${errorText.slice(0, 150)}`);
+        }
+        return response.json();
+    }
+
+    // get current file SHA and content
+    async function getCurrentFile(token, repo, filepath) {
+        const url = `https://api.github.com/repos/${repo}/contents/${encodeURIComponent(filepath)}`;
+        try {
+            const data = await githubRequest('GET', url, null, token);
+            const content = atob(data.content); // base64 decode
+            return { sha: data.sha, content };
+        } catch (err) {
+            if (err.message.includes('404')) {
+                // file doesn't exist → initial empty ledger
+                return { sha: null, content: '' };
+            }
+            throw err;
+        }
+    }
+
+    // parse ledger lines: "2025-04-06|-100|paid $50"
+    function parseLedger(content) {
+        const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const transactions = [];
+        for (let line of lines) {
+            const parts = line.split('|');
+            if (parts.length < 3) continue;
+            const date = parts[0];
+            const amountRaw = parts[1];
+            const memo = parts.slice(2).join('|'); // allow pipes in memo
+            const amount = parseFloat(amountRaw);
+            if (isNaN(amount)) continue;
+            transactions.push({ date, amount, memo });
+        }
+        return transactions;
+    }
+
+    function formatLedger(transactions) {
+        return transactions.map(tx => `${tx.date}|${tx.amount}|${tx.memo}`).join('\n');
+    }
+
+    // compute balance: sum of all amounts (positive = debt, negative = payment)
+    function computeBalance(transactions) {
+        return transactions.reduce((sum, tx) => sum + tx.amount, 0);
+    }
+
+    // add a new transaction (amount & memo) and commit to GitHub
+    async function addTransaction(amount, memo) {
+        if (!currentToken || !currentRepo) {
+            statusDiv.innerText = '❌ Please save your GitHub token and repo first.';
+            return false;
+        }
+        if (isNaN(amount) || amount === '') {
+            statusDiv.innerText = '❌ Enter a valid amount (negative for payment, positive for extra debt).';
+            return false;
+        }
+        if (!memo.trim()) {
+            statusDiv.innerText = '❌ Please add a short memo.';
+            return false;
+        }
+
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount)) {
+            statusDiv.innerText = '❌ Amount must be a number.';
+            return false;
+        }
+
+        statusDiv.innerText = '⏳ Updating ledger on GitHub...';
+        try {
+            const { sha, content } = await getCurrentFile(currentToken, currentRepo, currentFilePath);
+            let transactions = parseLedger(content);
+            const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+            const newTx = { date: today, amount: numAmount, memo: memo.trim() };
+            transactions.push(newTx);
+            const newContent = formatLedger(transactions);
+            const newBase64 = btoa(newContent);
+
+            const url = `https://api.github.com/repos/${currentRepo}/contents/${encodeURIComponent(currentFilePath)}`;
+            const body = {
+                message: `Add transaction: ${today} ${numAmount} - ${memo.trim().slice(0, 40)}`,
+                content: newBase64,
+                sha: sha  // if null (new file), omit sha
+            };
+            if (sha) body.sha = sha;
+
+            await githubRequest('PUT', url, body, currentToken);
+            statusDiv.innerText = '✅ Transaction added! Reloading ledger.';
+            await loadLedger();
+            amountInput.value = '';
+            memoInput.value = '';
+            return true;
+        } catch (err) {
+            console.error(err);
+            statusDiv.innerText = `❌ Failed: ${err.message}`;
+            return false;
+        }
+    }
+
+    async function loadLedger() {
+        if (!currentToken || !currentRepo) {
+            historyBody.innerHTML = '<tr><td colspan="3">⚠️ Configure token & repo first.</td></tr>';
+            balanceSpan.innerText = '—';
+            return;
+        }
+        statusDiv.innerText = 'Loading ledger...';
+        try {
+            const { content } = await getCurrentFile(currentToken, currentRepo, currentFilePath);
+            const transactions = parseLedger(content);
+            // sort by date ascending (oldest first)
+            transactions.sort((a,b) => a.date.localeCompare(b.date));
+            const balance = computeBalance(transactions);
+            balanceSpan.innerText = `$${balance.toFixed(2)}`;
+            if (transactions.length === 0) {
+                historyBody.innerHTML = '<tr><td colspan="3">📭 No transactions yet. Add the first one above.</td></tr>';
+            } else {
+                historyBody.innerHTML = transactions.slice().reverse().map(tx => {
+                    const amountClass = tx.amount >= 0 ? 'amount-positive' : 'amount-negative';
+                    const sign = tx.amount >= 0 ? '+' : '';
+                    return `<tr>
+                        <td>${tx.date}</td>
+                        <td class="${amountClass}">${sign}$${tx.amount.toFixed(2)}</td>
+                        <td class="memo">${escapeHtml(tx.memo)}</td>
+                    </tr>`;
+                }).join('');
+            }
+            statusDiv.innerText = `✅ Loaded ${transactions.length} entries.`;
+        } catch (err) {
+            console.error(err);
+            historyBody.innerHTML = '<tr><td colspan="3">❌ Failed to load ledger. Check token, repo, file path.</td></tr>';
+            statusDiv.innerText = `Error: ${err.message}`;
+            balanceSpan.innerText = 'error';
+        }
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    addBtn.addEventListener('click', () => {
+        const amount = amountInput.value;
+        const memo = memoInput.value;
+        addTransaction(amount, memo);
+    });
+
+    loadConfig();
+    if (currentToken && currentRepo) {
+        loadLedger();
+    } else {
+        historyBody.innerHTML = '<tr><td colspan="3">🔐 Enter GitHub token and repo to begin.</td></tr>';
+    }
+</script>
+</body>
+</html>

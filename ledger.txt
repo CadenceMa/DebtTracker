@@ -6,3 +6,4 @@
 2026-04-06|-2|fixing debt now that i fixed date
 2026-04-07|360|First hotel
 2026-04-07|1900|Second hotel
+2026-04-07|-50|Saving payment up

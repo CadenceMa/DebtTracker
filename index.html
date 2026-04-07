@@ -211,7 +211,8 @@
         try {
             const { sha, content } = await getCurrentFile(currentToken, currentRepo, currentFilePath);
             let transactions = parseLedger(content);
-            const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+            const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
             const newTx = { date: today, amount: numAmount, memo: memo.trim() };
             transactions.push(newTx);
             const newContent = formatLedger(transactions);

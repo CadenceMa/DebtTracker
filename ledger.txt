@@ -1,2 +1,3 @@
-2025-04-01|+500|Initial debt
+2025-04-01|500|Initial debt
 2025-04-06|-100|First paycheck payment
+2026-04-07|-400|Ending testing amount
